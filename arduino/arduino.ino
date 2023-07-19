@@ -66,15 +66,9 @@ static const uint8_t _hidReportDescriptor[] PROGMEM = {
 };
 
 #define DOF 6
-#define TX 0 // translation X
-#define TY 1 // translation Y
-#define TZ 2 // translation Z
-#define RX 3 // rotation X
-#define RY 4 // rotation Y
-#define RZ 5 // rotation Z
 
 /// hardware
-#define DEAD_THRESH 2  // Deazone for ignoring small movement
+#define DEAD_THRESH 5  // Deazone for ignoring small movement
 #define SPEED_PARAM 40 // larger is slower
 
 // ports of analog input for joysticks
@@ -82,11 +76,11 @@ int port[DOF] = {A0, A2, A6, A1, A3, A7};
 
 // conversion matrix from sensor input to rigid motion
 int coeff[DOF][DOF] = {
-    {0, 0, 0, -20, -20, 40}, // TX
-    {0, 0, 0, -17, 17, 0},   // TY
-    {-3, -3, -3, 0, 0, 0},   // TZ
-    {-6, 6, 0, 0, 0, 0},     // RY
+    {0, 0, 0, 10, 10, -20},  // TX
+    {0, 0, 0, 17, -17, 0},   // TY
+    {10, 10, 10, 0, 0, 0},   // TZ
     {3, 3, -6, 0, 0, 0},     // RX
+    {-6, 6, 0, 0, 0, 0},     // RY
     {0, 0, 0, 2, 2, 2},      // RZ
 };
 
@@ -96,6 +90,8 @@ int origin[DOF]; // initial sensor values
 
 void setup()
 {
+    Serial.begin(9600);
+
     static HIDSubDescriptor node(_hidReportDescriptor, sizeof(_hidReportDescriptor));
     HID().AppendDescriptor(&node);
 
@@ -103,6 +99,20 @@ void setup()
     {
         origin[i] = analogRead(port[i]);
     }
+}
+
+void log(int16_t x, int16_t y, int16_t z, int16_t rx, int16_t ry, int16_t rz) {
+    Serial.print(x);
+    Serial.print(", ");
+    Serial.print(y);
+    Serial.print(", ");
+    Serial.print(z);
+    Serial.print(", ");
+    Serial.print(rx);
+    Serial.print(", ");
+    Serial.print(ry);
+    Serial.print(", ");
+    Serial.println(rz);  
 }
 
 void send_command(int16_t rx, int16_t ry, int16_t rz, int16_t x, int16_t y, int16_t z)
@@ -123,6 +133,8 @@ void loop()
     {
         sv[i] = analogRead(port[i]) - origin[i];
     }
+
+    // log(sv[0],sv[1],sv[2],sv[3],sv[4],sv[5]);
 
     // calculate the motion of the "mushroom" knob
     for (int i = 0; i < DOF; i++)
@@ -159,8 +171,10 @@ void loop()
         }
     }
 
+
     if (Movement = true)
     {
-        send_command(mv[4], -mv[3], -mv[5], mv[0], mv[1], mv[2]);
+        log(mv[0], mv[1], mv[2], mv[3], mv[4], mv[5]);
+        send_command(mv[3], mv[4], mv[5], mv[0], mv[1], mv[2]);
     }
 }
