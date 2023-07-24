@@ -7,6 +7,15 @@
 
 #include "HID.h"
 
+#define DEAD_THRESH 5 // Deazone for ignoring small movement
+
+#define SPEED_DIVIDER_TX 2
+#define SPEED_DIVIDER_TY 2
+#define SPEED_DIVIDER_TZ 2
+#define SPEED_DIVIDER_RX 3
+#define SPEED_DIVIDER_RY 3
+#define SPEED_DIVIDER_RZ 3
+
 /*
 The HID report descriptor starts with some generic desktop usage pages and collections.
 
@@ -18,9 +27,9 @@ Then it defines 3 reports with different report IDs:
 */
 
 static const uint8_t _hidReportDescriptor[] PROGMEM = {
-    0x05, 0x01,       //  Usage Page (Generic Desktop)
-    0x09, 0x08,       //  0x08: Usage (Multi-Axis)
-    0xa1, 0x01,       //  Collection (Application)
+    0x05, 0x01, //  Usage Page (Generic Desktop)
+    0x09, 0x08, //  0x08: Usage (Multi-Axis)
+    0xa1, 0x01, //  Collection (Application)
 
     0xa1, 0x00,       // Collection (Physical)
     0x85, 0x01,       //  Report ID
@@ -62,31 +71,26 @@ static const uint8_t _hidReportDescriptor[] PROGMEM = {
     0x81, 0x02, //    Input (variable,absolute)
     0xC0,       // End Collection
 
-    0xC0        // End Collection
+    0xC0 // End Collection
 };
 
-#define DOF 6
-
-/// hardware
-#define DEAD_THRESH 5  // Deazone for ignoring small movement
-#define SPEED_PARAM 40 // larger is slower
+#define JOYSTICKS 4
+#define X 0
+#define Y 1
+#define Z 2
+#define T 0 // translation
+#define R 1 // rotation
 
 // ports of analog input for joysticks
-int port[DOF] = {A0, A2, A6, A1, A3, A7};
-
-// conversion matrix from sensor input to rigid motion
-int coeff[DOF][DOF] = {
-    {0, 0, 0, 10, 10, -20},  // TX
-    {0, 0, 0, 17, -17, 0},   // TY
-    {10, 10, 10, 0, 0, 0},   // TZ
-    {3, 3, -6, 0, 0, 0},     // RX
-    {-6, 6, 0, 0, 0, 0},     // RY
-    {0, 0, 0, 2, 2, 2},      // RZ
+int port[2][JOYSTICKS] = {
+    {A6, A0, A2, A8},
+    {A7, A1, A3, A9},
 };
 
 #define abs(x) ((x) < 0 ? (-x) : (x))
 
-int origin[DOF]; // initial sensor values
+// initial sensor values
+int origin[2][JOYSTICKS];
 
 void setup()
 {
@@ -95,13 +99,13 @@ void setup()
     static HIDSubDescriptor node(_hidReportDescriptor, sizeof(_hidReportDescriptor));
     HID().AppendDescriptor(&node);
 
-    for (int i = 0; i < DOF; i++)
-    {
-        origin[i] = analogRead(port[i]);
-    }
+    for (int i = 0; i < JOYSTICKS; i++)
+        for (int j = 0; j <= 1; j++)
+            origin[j][i] = analogRead(port[j][i]);
 }
 
-void log(int16_t x, int16_t y, int16_t z, int16_t rx, int16_t ry, int16_t rz) {
+void log(int16_t x, int16_t y, int16_t z, int16_t rx, int16_t ry, int16_t rz)
+{
     Serial.print(x);
     Serial.print(", ");
     Serial.print(y);
@@ -112,10 +116,10 @@ void log(int16_t x, int16_t y, int16_t z, int16_t rx, int16_t ry, int16_t rz) {
     Serial.print(", ");
     Serial.print(ry);
     Serial.print(", ");
-    Serial.println(rz);  
+    Serial.println(rz);
 }
 
-void send_command(int16_t rx, int16_t ry, int16_t rz, int16_t x, int16_t y, int16_t z)
+void send_command(int16_t x, int16_t y, int16_t z, int16_t rx, int16_t ry, int16_t rz)
 {
     uint8_t trans[6] = {x & 0xFF, x >> 8, y & 0xFF, y >> 8, z & 0xFF, z >> 8};
     HID().SendReport(1, trans, 6);
@@ -125,56 +129,32 @@ void send_command(int16_t rx, int16_t ry, int16_t rz, int16_t x, int16_t y, int1
 
 void loop()
 {
-    int sv[DOF]; // sensor value
-    int mv[DOF]; // motion vector
+    int sv[2][JOYSTICKS]; // sensor value
+    int mv[3][2];
 
     // read sensor value and subtract original position
-    for (int i = 0; i < DOF; i++)
+    for (int i = 0; i < JOYSTICKS; i++)
+        for (int j = 0; j <= 1; j++)
+            sv[j][i] = analogRead(port[j][i]) - origin[j][i];
+
+    mv[X][T] = (sv[Y][2] - sv[Y][0]) / SPEED_DIVIDER_TX;
+    mv[Y][T] = (sv[Y][3] - sv[Y][1]) / SPEED_DIVIDER_TY;
+    mv[Z][T] = -(sv[X][0] + sv[X][1] + sv[X][2] + sv[X][3]) / SPEED_DIVIDER_TZ;
+    mv[X][R] = (sv[X][0] - sv[X][2]) / SPEED_DIVIDER_RX;
+    mv[Y][R] = (sv[X][1] - sv[X][3]) / SPEED_DIVIDER_RY;
+    mv[Z][R] = -(sv[Y][0] + sv[Y][1] + sv[Y][2] + sv[Y][3]) / SPEED_DIVIDER_RZ;
+
+    bool moved = false;
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 2; j++)
+            if (abs(mv[i][j]) > DEAD_THRESH)
+                moved = true;
+            else
+                mv[i][j] = 0;
+
+    if (moved)
     {
-        sv[i] = analogRead(port[i]) - origin[i];
-    }
-
-    // log(sv[0],sv[1],sv[2],sv[3],sv[4],sv[5]);
-
-    // calculate the motion of the "mushroom" knob
-    for (int i = 0; i < DOF; i++)
-    {
-        mv[i] = 0;
-        for (int j = 0; j < DOF; j++)
-        {
-            mv[i] += coeff[i][j] * sv[j];
-        }
-
-        mv[i] /= SPEED_PARAM;
-
-        if ((mv[i] > -DEAD_THRESH) && (mv[i] < DEAD_THRESH))
-        {
-            mv[i] = 0;
-        }
-
-        else if (mv[i] > 500)
-        {
-            mv[i] = 500;
-        }
-        else if (mv[i] < -500)
-        {
-            mv[i] = -500;
-        }
-    }
-
-    bool Movement = false;
-    for (int i = 0; i < DOF; i++)
-    {
-        if (mv[i] != 0)
-        {
-            Movement = true;
-        }
-    }
-
-
-    if (Movement = true)
-    {
-        log(mv[0], mv[1], mv[2], mv[3], mv[4], mv[5]);
-        send_command(mv[3], mv[4], mv[5], mv[0], mv[1], mv[2]);
+        log(mv[X][T], mv[Y][T], mv[Z][T], mv[X][R], mv[Y][R], mv[Z][R]);
+        send_command(mv[X][T], mv[Y][T], mv[Z][T], mv[X][R], mv[Y][R], mv[Z][R]);
     }
 }
