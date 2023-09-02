@@ -7,11 +7,11 @@
 
 #include "HID.h"
 
-#define DEAD_THRESH 5 // Deazone for ignoring small movement
+#define DEAD_THRESH 1 // Deazone for ignoring small movement
 
 #define SPEED_DIVIDER_TX 2
 #define SPEED_DIVIDER_TY 2
-#define SPEED_DIVIDER_TZ 2
+#define SPEED_DIVIDER_TZ 4
 #define SPEED_DIVIDER_RX 3
 #define SPEED_DIVIDER_RY 3
 #define SPEED_DIVIDER_RZ 3
@@ -154,6 +154,7 @@ void loop()
 
     if (moved)
     {
+        log(sv[0][0], sv[0][1], sv[1][0], sv[1][1], sv[2][0], sv[2][1]);
         log(mv[X][T], mv[Y][T], mv[Z][T], mv[X][R], mv[Y][R], mv[Z][R]);
         send_command(mv[X][T], mv[Y][T], mv[Z][T], mv[X][R], mv[Y][R], mv[Z][R]);
     }
