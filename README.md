@@ -2,6 +2,20 @@
 
 6DOF mouse
 
+## Design
+
+MPU6050 - 3-Axis accelerometer and 3-Axis gyroscope
+
+I2C, connects to pin 2 (SDA), 3 (SCL)
+
+Arduino library: [MPU6050_light](https://github.com/rfetick/MPU6050_light)
+
+MLX90333
+
+SPI, connects to pin 10 (SS), 15 (SCLK), 14 and 16 (MOSI)
+
+Pro Micro
+
 ## Firmware
 
 ### Find the Arduino Data Folder
